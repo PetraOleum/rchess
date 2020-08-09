@@ -1,161 +1,32 @@
-library(reticulate)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
 library(scales)
 
-use_python("/usr/bin/python")
-
-pylib <- import_builtins()
-chess <- import("chess")
-pgn <- import("chess.pgn")
-
-# Translate between piece names (lower case) and number, value
-piece <- 1:6
-names(piece) <- unlist(chess$PIECE_NAMES)
-piece_values <- c(1, 3, 3, 5, 9)
-names(piece_values) <- unlist(chess$PIECE_NAMES)[1:5]
-
-# Parse pgn file to a list of pgn objects
-readPGN <- function(pgnFile) {
-    pgn.file <- pylib$open(pgnFile)
-    games <- list()
-    lgame <- NULL
-    repeat {
-        lgame <- pgn$read_game(pgn.file)
-        if (is.null(lgame)) {
-            break
-        }
-        games <- append(games, lgame)
-    }
-    pgn.file$close()
-    return(games)
-}
+source("chess.R")
 
 # Load votechess archive
 marchive <- readPGN("archive.pgn")
 
 # Load olympiad archives
-openr1 <- readPGN("wco2018_r01_open.pgn")
-womenr1 <- readPGN("wco2018_r01_women.pgn")
-openr2 <- readPGN("wco2018_r02_open.pgn")
-womenr2 <- readPGN("wco2018_r02_women.pgn")
-openr3 <- readPGN("wco2018_r03_open.pgn")
-womenr3 <- readPGN("wco2018_r03_women.pgn")
+#openr1 <- readPGN("wco2018_r01_open.pgn")
+#womenr1 <- readPGN("wco2018_r01_women.pgn")
+#openr2 <- readPGN("wco2018_r02_open.pgn")
+#womenr2 <- readPGN("wco2018_r02_women.pgn")
+#openr3 <- readPGN("wco2018_r03_open.pgn")
+#womenr3 <- readPGN("wco2018_r03_women.pgn")
 
 openall <- list()
 womenall <- list()
-for r in 1:11 {
-    openall <- c(openall, readPGN(sprintf("wco2018_r%0d_open.pgn", r)))
-    womenall <- c(womenall, readPGN(sprintf("wco2018_r%0d_women.pgn", r)))
+for (r in 1:11) {
+    openall <- c(openall, readPGN(sprintf("wco2018_r%02d_open.pgn", r)))
+    womenall <- c(womenall, readPGN(sprintf("wco2018_r%02d_women.pgn", r)))
+    print(r)
 }
 
-women123 <- c(womenr1, womenr2, womenr3)
-open123 <- c(openr1, openr2, openr3)
+#women123 <- c(womenr1, womenr2, womenr3)
+#open123 <- c(openr1, openr2, openr3)
 
-# Get a list of all PGN headers included at least once in list of pgn objects
-availHeaders <- function(games) {
-    unique(as.vector(unlist(sapply(games, function(g) {
-        pylib$list(g$headers)
-    }))))
-}
-
-# Get a single header value from PGN list; NA if missing
-parseHeader <- function(games, header) {
-    sapply(games, function(g) {
-        hv <- g$headers$get(header)
-        ifelse(is.null(hv), NA, hv)
-    })
-}
-
-# Get Date header as date
-gameDate <- function(games) {
-    as.Date(parseHeader(games, "Date"), format="%Y.%m.%d")
-}
-
-# Get the Square Index (0-63) of the king of a specified colour
-kingSquareIndex <- function(games, colour) {
-    sapply(games, function(g) {
-        g$end()$board()$king(colour)
-    })
-}
-
-# Translate from index to algebraic square, e.g. 63 -> h8
-indexToSquare <- function(index) {
-    paste0(letters[(index %% 8) + 1], (index %/% 8) + 1)
-}
-
-# Get kingsquare as square
-kingSquare <- function(games, colour) {
-    pindex <- kingSquareIndex(games, colour)
-    indexToSquare(pindex)
-}
-
-# Translate a result into a score, e.g. "0-1" from black's perspective is 1 point
-resToScore <- function(result, colour = chess$WHITE) {
-    cl = rep(colour, length.out = length(result))
-    res <- ifelse(result == "0-1", 0,
-                  ifelse(result == "1-0", 1, 0.5))
-    ifelse(cl == chess$WHITE, res, 1-res)
-}
-
-# Determine if game ended in checkmate
-isCheckmate <- function(games) {
-    sapply(games, function(g) {
-        g$end()$board()$is_checkmate()
-    })
-}
-
-# Determine if game ended in stalemate
-isStalemate <- function(games) {
-    sapply(games, function(g) {
-        g$end()$board()$is_stalemate()
-    })
-}
-
-# Determine if game ended with insufficient material
-insufficientMaterial <- function(games) {
-    sapply(games, function(g) {
-        g$end()$board()$is_insufficient_material()
-    })
-}
-
-# Number of halfmoves
-halfMoves <- function(games) {
-    sapply(games, function(g) {
-        length(g$end()$board()$move_stack)
-    })
-}
-
-# Count number of surviving pieces of given type(s) for player
-survPiece <- function(games, piece_name, colour) {
-    sapply(games, function(g) {
-        pn = 0
-        eb = g$end()$board()
-        for (p in piece_name) {
-            pn = pn + pylib$len(eb$pieces(piece[p], colour))
-        }
-        return(pn)
-    })
-}
-
-# Calculate pawn equivalent valuation of all surviving pieces for player
-survVal <- function(games, colour) {
-    sapply(games, function(g) {
-        pv = 0
-        eb = g$end()$board()
-        for (p in names(piece_values)) {
-            pv = pv + piece_values[p] * pylib$len(eb$pieces(piece[p], colour))
-        }
-        names(pv) <- NULL
-        return(pv)
-    })
-}
-
-# Calculate number of non-pawn, non-king surviving pieces for player
-survPieces <- function(games, colour) {
-    survPiece(games, c("knight", "bishop", "rook", "queen"), colour)
-}
 
 m.df <- data.frame(
     White = parseHeader(marchive, "White"),
@@ -177,24 +48,6 @@ m.df <- data.frame(
                       levels = c("Win", "Draw", "Loss"))
 )
 
-m.wkfreq <- m.df %>% mutate(WKF = factor(WKF, levels = letters[1:8])) %>%
-    group_by(WKF, WKR) %>% summarise(Freq = n(), .groups="drop")
-m.wkfreq <- rbind(m.wkfreq, list(WKF = "a", WKR = 1, Freq = NA))
-ggplot(m.wkfreq, aes(WKF, WKR, fill = Freq)) + geom_tile() +
-    scale_fill_gradient(low = "white", high = "red", limits = c(0, NA), na.value = "white") +
-    scale_y_continuous("Rank", limits = c(1, 8), breaks = 1:8) + 
-    scale_x_discrete("File") +
-    coord_fixed() + theme_classic()
-    
-m.bkfreq <- m.df %>% mutate(BKF = factor(BKF, levels = letters[1:8])) %>%
-    group_by(BKF, BKR) %>% summarise(Freq = n(), .groups="drop")
-ggplot(m.bkfreq, aes(BKF, BKR, fill = Freq)) + geom_tile() +
-    scale_fill_gradient(low = "white", high = "red", limits = c(0, NA), na.value = "white") +
-    scale_y_continuous("Rank", limits = c(1, 8), breaks = 1:8) + 
-    scale_x_discrete("File") +
-    coord_fixed() + theme_classic()
-
-
 m.df %>% select(White = WKSI, Black = BKSI) %>%
     pivot_longer(c(White, Black), names_to = "Colour", values_to = "SI") %>%
     mutate(Colour = factor(Colour, levels = c("White", "Black")),
@@ -210,10 +63,10 @@ ggplot(m.kfreq, aes(File, Rank)) + geom_tile(aes(fill=Freq)) +
     scale_x_continuous(breaks = 1:8, labels = letters[1:8], expand = c(0,0)) +
     theme(panel.grid.major = element_blank())
 
-carchive <- c(women123, open123)
+carchive <- c(womenall, openall)
 
 oly.df <- data.frame(
-    Division = rep(c("Women", "Open"), c(length(women123), length(open123))),
+    Division = rep(c("Women", "Open"), c(length(womenall), length(openall))),
     Round = parseHeader(carchive, "Round"),
     Board = parseHeader(carchive, "Board"),
     White = parseHeader(carchive, "White"),
@@ -241,12 +94,12 @@ oly.df <- data.frame(
     PieceScore = WhiteVal - BlackVal,
     RatingDiff = WhiteElo - BlackElo,
     Result = factor(Result, levels = c("1-0", "1/2-1/2", "0-1"))
-)
+) %>% filter(!is.na(Result))
 
-oly.df <- mutate(oly.df,
-    RatingDiff = WhiteElo - BlackElo,
-    Result = factor(Result, levels = c("1-0", "1/2-1/2", "0-1"))
-)
+save(oly.df, file="Olympiad.Rdata")
+
+# Just skip here if file already generated
+load("Olympiad.Rdata")
 
 oly.df %>% group_by(Division, Result, PieceScore) %>%
     summarise(Freq = n(), .groups="drop") -> Pfreq
@@ -254,7 +107,7 @@ oly.df %>% group_by(Division, Result, PieceScore) %>%
 # Distribution of material difference
 ggplot(Pfreq, aes(x = PieceScore, y = Freq, color = Result)) +
     geom_step(direction="mid", size=1.5) + facet_grid(Division~., scales="free_y") +
-    theme_classic() + xlab("Material difference at game end (Pawn equivalents)") +
+    theme_classic() + xlab("Material difference at game end (pawn equivalents)") +
     ylab("Number of games") +
     scale_colour_manual(values = c("#7570b3", "#1b9e77", "#d95f02"),
                         labels = c("White won", "Draw", "Black won"))
