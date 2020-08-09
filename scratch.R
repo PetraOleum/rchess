@@ -8,26 +8,6 @@ source("chess.R")
 # Load votechess archive
 marchive <- readPGN("archive.pgn")
 
-# Load olympiad archives
-#openr1 <- readPGN("wco2018_r01_open.pgn")
-#womenr1 <- readPGN("wco2018_r01_women.pgn")
-#openr2 <- readPGN("wco2018_r02_open.pgn")
-#womenr2 <- readPGN("wco2018_r02_women.pgn")
-#openr3 <- readPGN("wco2018_r03_open.pgn")
-#womenr3 <- readPGN("wco2018_r03_women.pgn")
-
-openall <- list()
-womenall <- list()
-for (r in 1:11) {
-    openall <- c(openall, readPGN(sprintf("wco2018_r%02d_open.pgn", r)))
-    womenall <- c(womenall, readPGN(sprintf("wco2018_r%02d_women.pgn", r)))
-    print(r)
-}
-
-#women123 <- c(womenr1, womenr2, womenr3)
-#open123 <- c(openr1, openr2, openr3)
-
-
 m.df <- data.frame(
     White = parseHeader(marchive, "White"),
     Black = parseHeader(marchive, "Black"),
@@ -63,8 +43,17 @@ ggplot(m.kfreq, aes(File, Rank)) + geom_tile(aes(fill=Freq)) +
     scale_x_continuous(breaks = 1:8, labels = letters[1:8], expand = c(0,0)) +
     theme(panel.grid.major = element_blank())
 
+# Load olympiad archives
+openall <- list()
+womenall <- list()
+for (r in 1:11) {
+    openall <- c(openall, readPGN(sprintf("wco2018_r%02d_open.pgn", r)))
+    womenall <- c(womenall, readPGN(sprintf("wco2018_r%02d_women.pgn", r)))
+    print(r)
+}
 carchive <- c(womenall, openall)
 
+# Very slow - see below
 oly.df <- data.frame(
     Division = rep(c("Women", "Open"), c(length(womenall), length(openall))),
     Round = parseHeader(carchive, "Round"),
