@@ -28,6 +28,20 @@ m.df <- data.frame(
                       levels = c("Win", "Draw", "Loss"))
 )
 
+# Overall stats
+m.df %>% mutate("Human Colour" = ifelse(White == "Mastodon", "White", "Black"),
+                "Human Colour" = factor(`Human Colour`, levels = c("White", "Black"))) %>%
+    group_by(`Human Colour`) %>% summarise(
+    "Total Games" = n(),
+    "Wins" = sum(MastoPt == 1),
+    "Draws" = sum(MastoPt == 0.5),
+    "Losses" = sum(MastoPt == 0),
+    "Checkmates" = sum(checkmate),
+    "Median turns" = median(ceiling(halfMoves/2)),
+    .groups = "drop"
+) %>% knitr::kable()
+
+# King positions
 m.df %>% select(White = WKSI, Black = BKSI) %>%
     pivot_longer(c(White, Black), names_to = "Colour", values_to = "SI") %>%
     mutate(Colour = factor(Colour, levels = c("White", "Black")),
@@ -87,62 +101,8 @@ oly.df <- data.frame(
 
 save(oly.df, file="Olympiad.Rdata")
 
-# Just skip here if file already generated
+# Just skip to here if file already generated
 load("Olympiad.Rdata")
-
-oly.df %>% group_by(Division, Result, PieceScore) %>%
-    summarise(Freq = n(), .groups="drop") -> Pfreq
-
-# Distribution of material difference
-ggplot(Pfreq, aes(x = PieceScore, y = Freq, color = Result)) +
-    geom_step(direction="mid", size=1.5) + facet_grid(Division~., scales="free_y") +
-    theme_classic() + xlab("Material difference at game end (pawn equivalents)") +
-    ylab("Number of games") +
-    scale_colour_manual(values = c("#7570b3", "#1b9e77", "#d95f02"),
-                        labels = c("White won", "Draw", "Black won"))
-
-# Distribution of ELO difference
-ggplot(filter(oly.df, WhiteElo > 0, BlackElo > 0), aes(x = RatingDiff, color = Result)) +
-    stat_density(geom="line", position="identity") +
-    facet_grid(Division~., scales="free_y") +
-    theme_classic() + xlab("ELO rating difference (White - Black)") +
-    scale_y_continuous("Relative percentage of games", labels=scales::percent) +
-    scale_colour_manual(values = c("#7570b3", "#1b9e77", "#d95f02"),
-                        labels = c("White won", "Draw", "Black won"))
-
-oly.df %>% select(Division, White = WKSI, Black = BKSI) %>%
-    pivot_longer(c(White, Black), names_to = "Colour", values_to = "SI") %>%
-    mutate(Colour = factor(Colour, levels = c("White", "Black")),
-           File = SI %% 8 + 1, Rank = SI %/% 8 + 1) %>%
-    group_by(Division, Colour, SI, File, Rank) %>% summarise(Freq = n(), .groups="drop") -> oly.kfreq
-
-# Plot of king locations
-ggplot(oly.kfreq, aes(File, Rank)) + geom_tile(aes(fill=Freq)) +
-    facet_wrap(Division ~ Colour, nrow=1) + coord_fixed() + theme_minimal() +
-    geom_hline(yintercept = 1:9 - 0.5) +
-    geom_vline(xintercept = 1:9 - 0.5) +
-    scale_fill_gradient(low = "white", high = "red", na.value = "white", trans="log10") +
-    scale_y_continuous(breaks = 1:8, expand = c(0,0)) +
-    scale_x_continuous(breaks = 1:8, labels = letters[1:8], expand = c(0,0)) +
-    theme(panel.grid.major = element_blank())
-
-oly.df %>% filter(checkmate) %>%
-    select(Division, Result, WKSI, BKSI) %>% 
-    mutate(Colour = ifelse(Result == "1-0", "Black", "White"),
-           SI = ifelse(Result == "1-0", BKSI, WKSI)) %>%
-    group_by(Division, Colour, SI) %>% summarise(Freq = n(), .groups="drop") %>%
-    mutate(Colour = factor(Colour, levels = c("White", "Black")),
-           File = SI %% 8 + 1, Rank = SI %/% 8 + 1) -> oly.checkmates
-
-# Plot of checkmated king locations
-ggplot(oly.checkmates, aes(File, Rank)) + geom_tile(aes(fill=Freq)) +
-    facet_grid(Colour ~ Division, as.table = FALSE) + coord_fixed() + theme_minimal() +
-    geom_hline(yintercept = 1:9 - 0.5) +
-    geom_vline(xintercept = 1:9 - 0.5) +
-    scale_fill_gradient(low = "white", high = "red", na.value = "white", limits=c(0, NA)) +
-    scale_y_continuous(breaks = 1:8, expand = c(0,0)) +
-    scale_x_continuous(breaks = 1:8, labels = letters[1:8], expand = c(0,0)) +
-    theme(panel.grid.major = element_blank())
 
 # Overall stats
 oly.df %>% group_by(Division) %>% summarise(
@@ -159,13 +119,86 @@ oly.df %>% group_by(Division) %>% summarise(
     .groups = "drop"
 ) %>% knitr::kable()
 
+# Game lengths
+ggplot(oly.df, aes(x = ceiling(halfMoves/2), color = Round)) +
+    stat_density(geom="line", position="identity") +
+    facet_grid(Division~.) +
+    theme_classic() +
+    xlab("Game length (turns)") +
+    scale_y_continuous("Relative proportion of games", labels = scales::percent)
 
+# Distribution of material difference
+oly.df %>% group_by(Division, Result, PieceScore) %>%
+    summarise(Freq = n(), .groups="drop") -> Pfreq
+
+ggplot(Pfreq, aes(x = PieceScore, y = Freq, color = Result)) +
+    geom_step(direction="mid", size=1.5) + facet_grid(Division~., scales="free_y") +
+    theme_classic() + xlab("Material difference at game end (pawn equivalents)") +
+    ylab("Number of games") +
+    scale_colour_manual(values = c("#7570b3", "#1b9e77", "#d95f02"),
+                        labels = c("White won", "Draw", "Black won"))
+
+# Distribution of ELO difference
+ggplot(filter(oly.df, WhiteElo > 0, BlackElo > 0), aes(x = RatingDiff, color = Result)) +
+    stat_density(geom="line", position="identity") +
+    facet_grid(Division~., scales="free_y") +
+    theme_classic() + xlab("ELO rating difference (White - Black)") +
+    scale_y_continuous("Relative percentage of games", labels=scales::percent) +
+    scale_colour_manual(values = c("#7570b3", "#1b9e77", "#d95f02"),
+                        labels = c("White won", "Draw", "Black won"))
+
+# ECO proportions
+oly.df %>% mutate(ECO_1 = substring(ECO, 1, 1),
+                  ECO_1 = ifelse(is.na(ECO_1), "Game too short", ECO_1)) %>%
+    group_by(Division, ECO_1, Result) %>%
+    summarise(Freq = n(), .groups="drop") -> eco.df
+
+ggplot(eco.df, aes(x = ECO_1, y = Freq, fill = Result)) +
+    geom_col() + facet_grid(.~Division) + theme_classic() +
+    xlab("ECO section") + ylab("Number of games") +
+    scale_fill_manual(values = c("#7570b3", "#1b9e77", "#d95f02"),
+                        labels = c("White won", "Draw", "Black won"))
+
+# Plot of king locations
+oly.df %>% select(Division, White = WKSI, Black = BKSI) %>%
+    pivot_longer(c(White, Black), names_to = "Colour", values_to = "SI") %>%
+    mutate(Colour = factor(Colour, levels = c("White", "Black")),
+           File = SI %% 8 + 1, Rank = SI %/% 8 + 1) %>%
+    group_by(Division, Colour, SI, File, Rank) %>% summarise(Freq = n(), .groups="drop") -> oly.kfreq
+
+ggplot(oly.kfreq, aes(File, Rank)) + geom_tile(aes(fill=Freq)) +
+    facet_wrap(Division ~ Colour, nrow=1) + coord_fixed() + theme_minimal() +
+    geom_hline(yintercept = 1:9 - 0.5) +
+    geom_vline(xintercept = 1:9 - 0.5) +
+    scale_fill_gradient(low = "white", high = "red", na.value = "white", trans="log10") +
+    scale_y_continuous(breaks = 1:8, expand = c(0,0)) +
+    scale_x_continuous(breaks = 1:8, labels = letters[1:8], expand = c(0,0)) +
+    theme(panel.grid.major = element_blank())
+
+# Plot of checkmated king locations
+oly.df %>% filter(checkmate) %>%
+    select(Division, Result, WKSI, BKSI) %>% 
+    mutate(Colour = ifelse(Result == "1-0", "Black", "White"),
+           SI = ifelse(Result == "1-0", BKSI, WKSI)) %>%
+    group_by(Division, Colour, SI) %>% summarise(Freq = n(), .groups="drop") %>%
+    mutate(Colour = factor(Colour, levels = c("White", "Black")),
+           File = SI %% 8 + 1, Rank = SI %/% 8 + 1) -> oly.checkmates
+
+ggplot(oly.checkmates, aes(File, Rank)) + geom_tile(aes(fill=Freq)) +
+    facet_grid(Colour ~ Division, as.table = FALSE) + coord_fixed() + theme_minimal() +
+    geom_hline(yintercept = 1:9 - 0.5) +
+    geom_vline(xintercept = 1:9 - 0.5) +
+    scale_fill_gradient(low = "white", high = "red", na.value = "white", limits=c(0, NA)) +
+    scale_y_continuous(breaks = 1:8, expand = c(0,0)) +
+    scale_x_continuous(breaks = 1:8, labels = letters[1:8], expand = c(0,0)) +
+    theme(panel.grid.major = element_blank())
+
+# Checkmate proportions
 left_join(oly.kfreq, oly.checkmates, by=c("Division", "Colour", "SI", "File", "Rank")) %>%
     mutate(Freq.y = ifelse(is.na(Freq.y), 0, Freq.y),
            cmProp = Freq.y / Freq.x
     ) -> oly.prop
 
-# Checkmate proportions
 ggplot(oly.prop, aes(File, Rank)) + geom_tile(aes(fill=cmProp)) +
     facet_grid(Colour ~ Division, as.table = FALSE) + coord_fixed() + theme_minimal() +
     geom_hline(yintercept = 1:9 - 0.5) +
@@ -175,25 +208,3 @@ ggplot(oly.prop, aes(File, Rank)) + geom_tile(aes(fill=cmProp)) +
     scale_y_continuous(breaks = 1:8, expand = c(0,0)) +
     scale_x_continuous(breaks = 1:8, labels = letters[1:8], expand = c(0,0)) +
     theme(panel.grid.major = element_blank())
-
-table(oly.df$ECO, oly.df$Division)
-
-oly.df %>% mutate(ECO_1 = substring(ECO, 1, 1),
-                  ECO_1 = ifelse(is.na(ECO_1), "Game too short", ECO_1)) %>%
-    group_by(Division, ECO_1, Result) %>%
-    summarise(Freq = n(), .groups="drop") -> eco.df
-
-# ECO proportions
-ggplot(eco.df, aes(x = ECO_1, y = Freq, fill = Result)) +
-    geom_col() + facet_grid(.~Division) + theme_classic() +
-    xlab("ECO section") + ylab("Number of games") +
-    scale_fill_manual(values = c("#7570b3", "#1b9e77", "#d95f02"),
-                        labels = c("White won", "Draw", "Black won"))
-
-# Game lengths
-ggplot(oly.df, aes(x = ceiling(halfMoves/2), color = Round)) +
-    stat_density(geom="line", position="identity") +
-    facet_grid(Division~.) +
-    theme_classic() +
-    xlab("Game length (turns)") +
-    scale_y_continuous("Relative proportion of games", labels = scales::percent)
