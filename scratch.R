@@ -28,6 +28,9 @@ m.df <- data.frame(
                       levels = c("Win", "Draw", "Loss"))
 )
 
+save(m.df, file="votechess.Rdata")
+load("votechess.Rdata")
+
 # Overall stats
 m.df %>% mutate("Human Colour" = ifelse(White == "Mastodon", "White", "Black"),
                 "Human Colour" = factor(`Human Colour`, levels = c("White", "Black"))) %>%
